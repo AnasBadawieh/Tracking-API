@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Tracker Admin-Panel</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/leaflet.css" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/leaflet.js"></script>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH" crossorigin="anonymous">
+
+</head>
+<body>
+  <div id="map" style="height: 600px;"></div>
+  <div class="button-container">
+    <div class="row justify-content align-items-center">
+      <div class="col-auto">
+        <button type="button" id="tagAsBus" onclick="busTagger()">Tag as a Bus</button>
+      </div>
+      <div class="col-auto">
+        <button type="button" id="highlight" onclick="highlightUser()">Highlight User</button>
+      </div>
+
+      <div class="col-auto">
+        <button type="button" id="deleteUser" onclick="deleteUser()">Delete User</button>
+      </div>
+
+      <div class="col-auto">
+        <button type="button" id="deleteAllUser" onclick="deleteAllUsers()">Delete All Users</button>
+      </div>
+
+      <div class="col-auto">
+        <div class="form-check form-switch">
+          <input class="form-check-input" type="checkbox" role="switch" id="toggleInterval">
+          <label class="form-check-label" for="toggleInterval">Show Users</label>
+        </div>
+      </div>
+      <div class="col-auto">
+        <select class="form-select form-select-lg" id="userList" aria-label="Default select example">
+        </select>
+      </div>
+    </div>
+  </div>
+  <style>
+      body{
+      background-color: black;
+    }
+
+    .button-container {
+      margin-top: 20px;
+      display: flex;
+      justify-content: center;
+    }
+
+    button {
+      margin: 0;
+      padding: 10px;
+      background-color: rgba(255, 0, 0, 0);
+      border: 1px solid transparent;
+      border-radius: 4px;
+      color: #ffffff;
+      transition: border-color 0.3s ease;
+      cursor: pointer;
+      font-family: arial,sans-serif;
+      font-size: 14px;
+      height: 36px;
+      line-height: 27px;
+      min-width: 54px;
+      padding: 0 16px;
+      text-align: center;
+      user-select: none;
+      -webkit-user-select: none;
+      touch-action: manipulation;
+      white-space: pre;
+    }
+
+    button:hover {
+      border-color: #dadce0;
+      box-shadow: rgba(0, 0, 0, .1) 0 1px 1px;
+      color: #233a7f;
+    }
+
+    button:focus {
+      border-color: #ffffff;
+      outline: none;
+    }
+
+    .form-check {
+      margin-top: 6px;
+      color: #ffffff;
+    }
+
+    .form-check-input:checked {
+      background-color: #0d6efd;
+      border-color: #0d6efd;
+    }
+    .form-select {
+      margin-top: 6px;
+      width: 300px;
+      font-size: 14px;
+    }
+  </style>
+  <script>
+    var sharedData = {};
+    var toggleSwitch = document.getElementById('toggleInterval');
+    var map = L.map('map').setView([35.21, 33.34], 14);
+    var userMarkers=[];
+    var interval;
+    const userList = document.getElementById('userList');
+    const userId = userList.value;
+    var userIcon = L.icon({iconUrl:'./img/human-icon.png',iconSize:[40,60],iconAnchor:[20,60],popupAnchor:[0,-40]});
+    var busIcon = L.icon({iconUrl:'./img/bus-icon.png',iconSize:[40,60],iconAnchor:[20,60],popupAnchor:[0,-40]});
+    window.onload = connectWebSocket;
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: 'Map data &copy; <a href="https://www.openstreetmap.org/">OpenStreetMap</a> contributors',
+      maxZoom: 20,
+    }).addTo(map);
+    
+    window.onblur = function() {
+      clearMarkers();
+      document.getElementById('userList').innerHTML = '';
+      toggleSwitch.checked = false;
+      clearInterval(interval);  // Assuming busInterval is the variable for your interval
+    };
+
+    var ws;
+
+    function connectWebSocket() {
+      // Ensure the WebSocket URL matches your server configuration
+      ws = new WebSocket('wss://neu-dc.aiiot.website/trackerdata');
+  
+      ws.onopen = function() {
+          console.log('WebSocket connected');
+      };
+    
+      ws.onerror = function(error) {
+          console.error('WebSocket Error: ' + error);
+      };
+    
+      ws.onmessage = function(e) {
+          console.log('Received message: ' + e.data);
+          handleWebSocketMessages(JSON.parse(e.data));
+          ws.onclose();
+      };
+    
+      ws.onclose = function(e) {
+          console.log('WebSocket closed.');
+      };
+    }
+
+    function handleWebSocketMessages(message) {
+        // Handle incoming messages
+    }
+      
+    toggleSwitch.addEventListener('change', () => {
+      if (toggleSwitch.checked){
+        interval = setInterval(fetchAndUpdateSharedData, 1000);
+      } else{
+        clearInterval(interval);
+        clearMarkers();
+      }
+    });
+
+    function highlightUser(){
+      console.log('User Highlighted on map')
+    }
+
+    function clearMarkers(){
+      map.eachLayer(layer => {if (layer instanceof L.Marker) map.removeLayer(layer)});
+    }
+    
+
+    function displayUserLocation(userId, userLocation) {
+        var marker = userMarkers[userId];
+        if (marker) {
+            // Marker exists, just update its position
+            marker.setLatLng([userLocation.lat, userLocation.long]);
+        } else {
+            // Create new marker with popup content
+            var content = `<b>Name:</b> ${userId}<br>` +
+                          `${userLocation.studentNumber ? `<b>Student Number:</b> ${userLocation.studentNumber}<br>` : ''}` +
+                          `${userLocation.phoneNumber ? `<b>Phone:</b> ${userLocation.phoneNumber}<br>` : ''}`;
+            var popup = L.popup().setContent(content);
+            marker = L.marker([userLocation.lat, userLocation.long], {icon: userIcon}).bindPopup(popup).addTo(map);
+            userMarkers[userId] = marker;   
+        }
+    }
+
+
+    function fetchAndUpdateSharedData() {
+        fetch('https://neu-dc.aiiot.website/trackerdata/shared-data')
+            .then(response => response.json())
+            .then(data => {
+                sharedData = data;
+                populateUserList(data);
+            
+                Object.keys(data).forEach(userId => {
+                    displayUserLocation(userId, data[userId]);
+                });
+
+                // Remove markers for users no longer present in the data
+                Object.keys(userMarkers).forEach((userId) => {
+                    if (!data[userId]) {
+                        map.removeLayer(userMarkers[userId]);
+                        delete userMarkers[userId];
+                    }
+                });
+            })
+            .catch(error => console.log('Error:', error));
+    }
+
+    function deleteAllUsers() {
+        connectWebSocket();
+      fetch('https://neu-dc.aiiot.website/trackerdata/delete-all-users', {
+          method: 'POST',
+          headers: {
+              'Content-Type': 'application/json'
+          }
+      }).then(response => {
+          if (!response.ok) {
+              throw new Error('Failed to delete all users');
+          }
+          console.log('All users deleted successfully');
+          document.getElementById('userList').innerHTML = '';
+          if (ws && ws.readyState === WebSocket.OPEN) {
+              ws.send(JSON.stringify({ type: 'stopTrackingAll' }));
+          }
+      }).catch(error => {
+          console.error('Error deleting all users:', error);
+      });
+    }
+
+    function deleteUser() {
+        connectWebSocket();
+      const selectedUserId = document.getElementById('userList').value; // Ensure this is the correct way to retrieve the selected user ID
+      fetch('https://neu-dc.aiiot.website/trackerdata/delete-user-data', {
+          method: 'POST',
+          headers: {
+              'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ userId: selectedUserId })
+      }).then(response => {
+          if (!response.ok) {
+              throw new Error(`Failed to delete user data for ${selectedUserId}`);
+          }
+          console.log(`User data for ${selectedUserId} deleted successfully`);
+          // Remove the selected user from the select box
+          let index = document.getElementById('userList').selectedIndex;
+          if (index > -1) {
+              document.getElementById('userList').options.remove(index);
+          }
+          if (ws && ws.readyState === WebSocket.OPEN) {
+              ws.send(JSON.stringify({ type: 'stopTracking', userId: selectedUserId }));
+          }
+      }).catch(error => {
+          console.error('Error:', error);
+      });
+    }
+
+
+
+
+    
+    
+
+    function populateUserList(data) {
+      const userList = document.getElementById('userList');
+        const existingUsers = new Set([...userList.options].map(opt => opt.value));
+        Object.keys(data).forEach(userId => {
+            if (!existingUsers.has(userId)) {
+                const option = document.createElement('option');
+                option.value = userId;
+                option.textContent = userId; // or any other identifier
+                userList.appendChild(option);
+            }
+        })
+    }
+
+
+    function busTagger(){
+      console.log(sharedData)
+      const userId = document.getElementById('userList').value;
+      const userData = sharedData[userId];
+      if (userData) {
+        fetch('https://neu-dc.aiiot.website/trackerdata/update-bus-data', { 
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ [userId]: userData })
+        })
+        .then(response => {
+          if (!response.ok) throw new Error('Failed to tag user as bus');
+          console.log(`User ${userId} tagged as bus successfully.`);
+        })
+        .catch(error => console.error('Error tagging user as bus:', error));
+      }
+    };
+    
+  </script>
+</body>
+</html>

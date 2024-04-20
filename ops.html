@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Tracker User</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/leaflet.css" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/leaflet.js"></script>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH" crossorigin="anonymous">
+
+  
+</head>
+<body>
+  <div id="map" style="height: 400px;"></div>
+  <div class="button-container">
+    <div class="row justify-content">
+      <div class="col-auto">
+        <button type="button" id="tracker" onclick="toggleTracking()">Track Me</button>
+      </div>
+      <div class="col-auto">
+        <button type="button" id="currentLocation" onclick="currentLocation()" disabled="true">Show my location</button>
+      </div>
+        <div class="col-auto">
+        <div class="form-check form-switch">
+          <input class="form-check-input" type="checkbox" role="switch" id="toggleSwitch">
+          <label class="form-check-label" for="toggleSwitch">Show Buses</label>
+        </div>
+      </div>
+    </div>
+  </div>
+  
+  <div id="userFormModal" >
+    <div>
+      <span style="position: absolute; top: 10px; right: 10px; cursor: pointer;" onclick="closeForm()">X</span>
+      <form id="userInfoForm" onsubmit="return false;">
+        <div>
+          <label for="userName">Name (required):</label>
+          <input type="text" id="userName" required autocomplete="name"><br><br>
+        </div>
+        <div>
+          <input type="checkbox" id="isStudent">
+          <label for="isStudent">Are you a student?</label><br>
+          <div id="studentInfo" style="display:none;">
+            <label for="studentNumber">Student Number:</label>
+            <input type="text" id="studentNumber" autocomplete="off"><br><br>
+          </div>
+        </div>
+        <div>
+          <input type="checkbox" id="hasPhoneNumber">
+          <label for="hasPhoneNumber">Do you have a phone number?</label><br>
+          <div id="phoneInfo" style="display:none;">
+            <label for="phoneNumber">Phone Number:</label>
+            <input type="text" id="phoneNumber" autocomplete="tel"><br><br>
+          </div>
+        </div>
+        <button type="button" onclick="submitUserInfo()">Submit</button>
+      </form>
+    </div>
+  </div>
+  <style>
+    #userFormModal {
+      display: none; 
+      position: fixed; 
+      left: 0; 
+      top: 0; 
+      width: 100%; 
+      height: 100%; 
+      background-color: rgba(0,0,0,0.5); 
+      z-index: 1000; /* Ensure it's above all other content */
+    }
+
+    #userFormModal > div {
+      background-color: white; 
+      margin: 100px auto; 
+      padding: 20px; 
+      width: 300px; 
+      z-index: 1001; /* Ensure the form itself is also properly layered */
+    }
+    
+        body{
+      background-color: black;
+
+    }
+    
+    .button-container {
+      margin-top: 20px;
+      display: flex;
+      justify-content: center;
+    }
+
+    button {
+      margin: 0 5px;
+      background-color: rgba(255, 0, 0, 0);
+      border: 1px solid transparent;
+      border-radius: 4px;
+      color: #ffffff;
+      transition: border-color 0.3s ease;
+      cursor: pointer;
+      font-family: arial,sans-serif;
+      font-size: 14px;
+      height: 36px;
+      line-height: 27px;
+      min-width: 54px;
+      padding: 0 16px;
+      text-align: center;
+      user-select: none;
+      -webkit-user-select: none;
+      touch-action: manipulation;
+      white-space: pre;
+    }
+
+    button:hover {
+      border-color: #dadce0;
+      box-shadow: rgba(0, 0, 0, .1) 0 1px 1px;
+      color: #0d6efd;
+    }
+
+    button:focus {
+      border-color: #ffffff;
+      outline: none;
+    }
+
+    .form-check {
+
+      margin-top: 6px;
+      color: #ffffff;
+    }
+
+    .form-check-input:checked {
+      background-color: #0d6efd;
+      border-color: #0d6efd;
+    }
+  </style>
+  <script>
+    var toggleSwitch = document.getElementById('toggleSwitch');
+    var sharedData = {};
+    var busMarkers = [];
+    var map = L.map('map').setView([35.22857, 33.31977], 16);
+    var userMarker;
+    var busTempMarker;
+    var busInterval;
+    var trackInterval;
+    var lat;
+    var long;
+    var userIcon = L.icon({iconUrl:'./img/human-icon.png',iconSize:[40,60],iconAnchor:[20,60],popupAnchor:[20,0]});
+    var busIcon = L.icon({iconUrl:'./img/bus-icon.png',iconSize:[40,60],iconAnchor:[20,60],popupAnchor:[20,0]});
+    var userId;
+    var tracking = false;
+    let userInfoSubmitted = false;
+    navigator.geolocation.getCurrentPosition(position)
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: 'Map data &copy; <a href="https://www.openstreetmap.org/">OpenStreetMap</a> contributors',
+      maxZoom: 18,
+    }).addTo(map);
+    var facEngineering = L.marker([35.22679, 33.31988]).addTo(map).bindPopup(L.popup({closeOnClick:true})).setPopupContent('<a href="https://tour.panoee.com/6543d2d34eb4d66bb130d466/6543d5b7ab514b9e5ccd02de">Faculty of Engineering</a>').openPopup();
+    var hospital = L.marker([35.22857, 33.31977]).addTo(map).bindPopup(L.popup({closeOnClick:true})).setPopupContent('<a href="https://tour.panoee.com/654e6487d8c0de839a6735e2/654e64f4d747fd43b41c2fd9">NEU Hospital</a>').openPopup();
+    var facMedicine = L.marker([35.22792, 33.31960]).addTo(map).bindPopup(L.popup({closeOnClick:true})).setPopupContent('<a href="https://tour.panoee.com/iframe/6545363b59dd512ab75b9e43">Faculty of Medicine</a>').openPopup();
+    var facVeterinary = L.marker([35.22685,33.31902]).addTo(map).bindPopup(L.popup({closeOnClick:true})).setPopupContent('<a href="https://tour.panoee.com/iframe/6548f402de5d97b14cd94ff1"> fac.Veterinary Medicine</a>').openPopup();
+    var mosuqe = L.marker([35.221897, 33.323323]).addTo(map).bindPopup(L.popup({closeOnClick:true})).setPopupContent('<a href="https://tour.panoee.com/654e5f93d747fd07c31c2f7f">NEU Mosuqe</a>').openPopup();
+    var library = L.marker([35.225137, 33.327278]).addTo(map).bindPopup(L.popup({closeOnClick:true})).setPopupContent('<a href="https://tour.panoee.com/655e2dbdd8c0de9b92679d75/655e2e3cd8c0de2a0d679d92">Library</a>').openPopup();
+    var busStation1 = L.marker([35.229752, 33.324771]).addTo(map).bindPopup(L.popup({closeOnClick:true})).setPopupContent('<a href="https://bus.neu.edu.tr/">Bus station 1</a>').openPopup();
+    var busStation2 = L.marker([35.225750, 33.325832]).addTo(map).bindPopup(L.popup({closeOnClick:true})).setPopupContent('<a href="https://bus.neu.edu.tr/">Bus station 2</a>').openPopup();
+    var facCommunications = L.marker([35.224082, 33.325411]).addTo(map).bindPopup(L.popup({closeOnClick:true})).setPopupContent('<a href="https://tour.panoee.com/656defa5d8c0de211a6811d0/656defd2d747fd6eff1d1363">Faculty of Communications</a>').openPopup();
+    var facDentistry = L.marker([35.228595, 33.321313]).addTo(map).bindPopup(L.popup({closeOnClick:true})).setPopupContent('<a href="https://tour.panoee.com/656ded4cd747fd62681d1336/656dee23d747fd3e931d1345">Faculty of Dentistry</a>').openPopup();
+    var facPharmacy = L.marker([35.2287516,33.3216167]).addTo(map).bindPopup(L.popup({closeOnClick:true})).setPopupContent('<a href="https://tour.panoee.com/655e70c7d8c0de8dd6679ed2/655e7171d8c0def22d679ee4">Faculty of Pharmacy</a>').openPopup();
+    var preperaterySchool = L.marker([35.230060, 33.323102]).addTo(map).bindPopup(L.popup({closeOnClick:true})).setPopupContent('<a href="https://tour.panoee.com/654b3de0d8c0deb015671e08">Preperatery School</a>').openPopup();
+    var carMusem = L.marker([35.225351,33.323369]).addTo(map).bindPopup(L.popup({closeOnClick:true})).setPopupContent('<a href="https://tour.panoee.com/6580afcad747fd390c1d7aa0">NEU Car Museum</a>').openPopup();
+    var lake = L.marker([35.226819, 33.321177]).addTo(map).bindPopup(L.popup({closeOnClick:true})).setPopupContent('<a href="https://tour.panoee.com/65dfb3b494b642d9e115cfe2/65dfb4367a73f274fe4da8ab">NEU Lake</a>').openPopup();
+    var facHealthScience = L.marker([35.229668, 33.320829]).addTo(map).bindPopup(L.popup({closeOnClick:true})).setPopupContent('<a href="https://tour.panoee.com/65c6474b01a42077b5de295b/65c64a1001a42021b3de2973">Faculty of Health and Science </a>').openPopup();
+
+
+    var ws;
+
+    function connectWebSocket() {
+      try {
+        ws = new WebSocket('wss://neu-dc.aiiot.website/trackerdata');
+
+        ws.onopen = function() {
+          console.log('WebSocket connected');
+        };
+
+        ws.onerror = function(error) {
+          console.error('WebSocket Error: ', error);
+        };
+
+        ws.onmessage = function(e) {
+          ws.onmessage = function(event) {
+            var message = JSON.parse(event.data);
+            if (message.type === 'stopTracking' && message.userId === userId) {
+              stopTracking();
+            } else if (message.type === 'stopTrackingAll') {
+              stopTracking();
+            }
+          };
+        };
+
+        ws.onclose = function(e) {
+          console.log('WebSocket closed. Reconnect will be attempted in 1 second.', e.reason);
+          setTimeout(function() {
+            connectWebSocket();
+          }, 1000);
+        };
+      } catch (error) {
+        console.error('WebSocket initiation failed: ', error);
+      }
+    }
+
+
+    function handleWebSocketMessages(message) {
+      console.log(message)
+        // Handle incoming messages
+    }
+
+// Connect to WebSocket when the page loads
+    window.onload = connectWebSocket;
+    
+    
+    window.addEventListener('beforeunload', function(event) {
+        deleteUser();
+    });
+
+
+
+    function stopTracking() {
+        deleteUser();
+      clearInterval(trackInterval);
+      if (userMarker) {
+          map.removeLayer(userMarker);
+      }
+      console.log('Tracking stopped by admin.');
+      sharedData[userId] = null; // Example to clear data
+      console.log('Tracking stopped.');
+    }
+
+
+////////////////////////////////////////////
+    function currentLocation(){
+      map.setView([lat,long], 18)
+    }
+////////////////change it to an icon on the map 
+
+    function position(pos){
+      lat = pos.coords.latitude
+      long = pos.coords.longitude
+    }
+
+    
+    document.getElementById('tracker').onclick = function() {
+      if (!userInfoSubmitted) {
+        document.getElementById('userFormModal').style.display = 'block';
+      } else {
+        toggleTracking(); // Toggle tracking without showing the form again
+      }
+    };
+
+
+    //Event Listener for an Enter Keypress for the User Information Form
+    document.getElementById('userFormModal').addEventListener("keypress", function(event) {
+      if (event.key === "Enter") {
+        submitUserInfo();
+      }// working only when pressing the textbox
+    });
+
+    //Event Listener for an Esc Keypress for the User Information Form
+    document.getElementById('userFormModal').addEventListener("keydown", function(event) {
+      if (event.keyCode === 27) {
+        closeForm();
+      }// not working figure out later
+    });
+
+    //Closing the Form
+    function closeForm() {
+      document.getElementById('userFormModal').style.display = 'none';
+    }
+
+    document.getElementById('isStudent').onchange = function() {
+      document.getElementById('studentInfo').style.display = this.checked ? 'block' : 'none';
+    };
+
+    document.getElementById('hasPhoneNumber').onchange = function() {
+      document.getElementById('phoneInfo').style.display = this.checked ? 'block' : 'none';
+    };
+
+    function submitUserInfo() {
+      userId = document.getElementById('userName').value;
+      if (userId === '') {
+        alert("You must write your name");
+        return;
+      }
+      userInfoSubmitted = true;
+      var studentNumber = document.getElementById('isStudent').checked ? document.getElementById('studentNumber').value : '';
+      var phoneNumber = document.getElementById('hasPhoneNumber').checked ? document.getElementById('phoneNumber').value : '';
+      document.getElementById('userFormModal').style.display = 'none';
+      toggleTracking(); // Start tracking after submission
+    }
+
+    function toggleTracking() {
+      tracking = !tracking;
+      var trackerButton = document.getElementById('tracker');
+      var locateMeButton = document.getElementById('currentLocation');
+      trackerButton.textContent = tracking ? 'Stop Tracking' : 'Track Me';
+      if (tracking) {
+        currentLocation();
+        locateMeButton.disabled=false;
+        trackInterval = setInterval(() => {
+          navigator.geolocation.getCurrentPosition(getPosition);
+        }, 1000);
+        console.log('Tracking started');
+      } else {
+        locateMeButton.disabled=true;
+        clearInterval(trackInterval);
+        if (userMarker) {
+          map.removeLayer(userMarker);
+        }
+        deleteUser();
+      }
+    }
+    
+    function deleteUser(){
+        fetch('https://neu-dc.aiiot.website/trackerdata/delete-user-data', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ userId: userId })
+        }).then(response => {
+          if (!response.ok) {
+            throw new Error('Failed to delete user data');
+          }
+          console.log('User data deleted successfully');
+        }).catch(error => {
+          console.error('Error:', error);
+        });
+        console.log('Tracking stopped');
+    }
+    
+    
+    
+    function sendDataToServer(userData) {
+      fetch('https://neu-dc.aiiot.website/trackerdata/update-shared-data', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(userData)
+      })
+      .then(response => {
+        if (!response.ok) {
+          throw new Error('Failed to update user data');
+        }
+      })
+      .catch(error => {
+        console.error('Error:', error);
+      });
+    }
+
+    function fetchAndDisplayBusData() {
+      fetch('https://neu-dc.aiiot.website/trackerdata/bus-shared-data')
+        .then(response => {
+          return response.json();
+        })
+        .then(busData => {
+          clearBusMarkers();   //Clear existing bus markers before adding new ones
+          Object.entries(busData).forEach(([userId, location]) => {
+            busTempMarker = L.marker([location.lat, location.long], {icon: busIcon}).addTo(map);
+            busMarkers.push(busTempMarker); // Store marker to remove it later
+          });
+        })
+        .catch(error => console.error('Error fetching bus data:', error));
+    }
+
+    function getPosition(pos){
+        lat = pos.coords.latitude;
+        long = pos.coords.longitude;
+        if (userMarker){
+            map.removeLayer(userMarker)
+        }
+        userMarker = L.marker([lat,long],{icon:userIcon}).addTo(map)
+        console.log('getPosition is Tracking')
+        sharedData[userId] = { lat: lat, long: long };
+        sendDataToServer(sharedData);
+    }
+
+    // Function to clear bus markers
+    function clearBusMarkers() {
+      busMarkers.forEach(busTempMarker => map.removeLayer(busTempMarker));
+      busMarkers = []; 
+    }
+
+    toggleSwitch.addEventListener('change', () => {
+      if (toggleSwitch.checked) {
+        busInterval = setInterval(fetchAndDisplayBusData, 1000); 
+      } else {
+        clearInterval(busInterval);
+        clearBusMarkers(); 
+      }
+    });
+
+  </script>
+</body>
+</html>
